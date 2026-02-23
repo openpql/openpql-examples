@@ -1,0 +1,207 @@
+# GDPR - Article 6 & 7: Lawful Basis and Consent Management
+# Validates consent requirements for personal data processing
+
+FRAMEWORK GDPR_Consent {
+    version: "2018.05.25"
+}
+
+# INTENT 1: Validate lawful basis for processing
+INTENT validate_lawful_basis {
+    triggers: ["data_processing_request"],
+    context: [consent_record, user_profile, processing_purpose],
+    
+    description: "Article 6 - Ensure lawful basis exists before processing 
+                  personal data"
+    
+    conditions: {
+        # Missing consent entirely
+        WHEN consent_timestamp == null AND 
+             lawful_basis_type == null THEN
+            deny: "No lawful basis for processing" WITH {
+                regulation: "GDPR Article 6",
+                severity: "blocking",
+                user_action_required: "obtain_consent"
+            }
+        
+        # Consent expired
+        WHEN consent_timestamp != null AND
+             consent_expired == true THEN
+            deny: "Consent expired" WITH {
+                regulation: "GDPR Article 6",
+                severity: "blocking",
+                user_action_required: "renew_consent"
+            }
+        
+        # Alternative lawful basis validation
+        WHEN lawful_basis_type IN ["contract", "legal_obligation", 
+                                    "vital_interests", "public_task", 
+                                    "legitimate_interests"] THEN {
+            lawful_basis_verified: true,
+            article_reference: "6_1",
+            compliance_action: "allow_with_logging",
+            documentation_required: true
+        }
+    }
+}
+
+# INTENT 2: Consent must be freely given
+INTENT validate_freely_given_consent {
+    triggers: ["consent_collection"],
+    context: [consent_form, service_access, conditional_processing],
+    
+    description: "Article 7(4) - Consent must be freely given, not conditional 
+                  on service access"
+    
+    conditions: {
+        # Conditional consent violation
+        WHEN consent_conditional_on_service == true AND
+             processing_necessary_for_service == false THEN {
+            consent_violation_type: "conditional_consent",
+            article_reference: "7_4",
+            risk_level: "high",
+            compliance_action: "reject_consent_form",
+            redesign_required: true
+        }
+        
+        # Pre-ticked boxes violation
+        WHEN consent_pre_selected == true THEN {
+            consent_violation_type: "pre_ticked_consent",
+            article_reference: "7_2",
+            risk_level: "high",
+            compliance_action: "reject_consent_mechanism"
+        }
+    }
+}
+
+# INTENT 3: Specific and informed consent
+INTENT validate_specific_informed_consent {
+    triggers: ["consent_request"],
+    context: [consent_text, processing_purposes, data_categories],
+    
+    description: "Article 7(2) - Consent must be specific, informed, and 
+                  presented in clear language"
+    
+    conditions: {
+        # Blanket consent rejection
+        WHEN consent_purposes_count > 5 THEN {
+            consent_violation_type: "blanket_consent",
+            article_reference: "7_2",
+            risk_level: "medium",
+            compliance_action: "require_granular_consent",
+            recommendation: "separate_consent_per_purpose"
+        }
+        
+        # Unclear language
+        WHEN consent_readability_score < 0.6 THEN {
+            consent_violation_type: "unclear_consent_language",
+            article_reference: "7_2",
+            risk_level: "medium",
+            compliance_action: "improve_clarity",
+            target_reading_level: "8th_grade"
+        }
+        
+        # Missing information
+        WHEN consent_data_categories_disclosed == false OR
+             consent_retention_period_disclosed == false OR
+             consent_right_to_withdraw_disclosed == false THEN {
+            consent_violation_type: "insufficient_information",
+            article_reference: "13_14",
+            risk_level: "high",
+            compliance_action: "enhance_consent_notice"
+        }
+    }
+}
+
+# INTENT 4: Right to withdraw consent
+INTENT validate_consent_withdrawal {
+    triggers: ["consent_withdrawal_request"],
+    context: [consent_record, user_identity, processing_history],
+    
+    description: "Article 7(3) - Users must be able to withdraw consent as 
+                  easily as they gave it"
+    
+    conditions: {
+        # Immediate withdrawal
+        WHEN withdrawal_request_verified == true THEN {
+            consent_action: "revoke_immediately",
+            article_reference: "7_3",
+            compliance_action: "stop_processing_within_72_hours",
+            notification_required: true,
+            audit_trail: "withdrawal_processed"
+        }
+        
+        # Data deletion after withdrawal
+        WHEN consent_withdrawn == true AND
+             no_other_lawful_basis == true THEN {
+            consent_action: "delete_personal_data",
+            article_reference: "17",
+            compliance_action: "right_to_erasure",
+            deletion_deadline_days: 30,
+            confirmation_required: true
+        }
+    }
+}
+
+# INTENT 5: Child consent (under 16)
+INTENT validate_child_consent {
+    triggers: ["consent_collection", "age_verification"],
+    context: [user_age, parental_consent, service_type],
+    
+    description: "Article 8 - Special consent rules for children's data in 
+                  information society services"
+    
+    conditions: {
+        # Child without parental consent
+        WHEN user_age < 16 AND
+             service_type == "information_society" AND
+             parental_consent_obtained == false THEN
+            deny: "Parental consent required for children under 16" WITH {
+                regulation: "GDPR Article 8",
+                severity: "blocking",
+                user_action_required: "obtain_parental_consent"
+            }
+        
+        # Parental consent verification
+        WHEN user_age < 16 AND
+             parental_consent_obtained == true AND
+             parental_authority_verified == false THEN {
+            consent_violation_type: "unverified_parental_consent",
+            article_reference: "8_2",
+            risk_level: "critical",
+            compliance_action: "require_verification",
+            acceptable_verification_methods: [
+                "signed_declaration",
+                "id_verification",
+                "payment_method_verification"
+            ]
+        }
+    }
+}
+
+# INTENT 6: Consent records audit trail
+INTENT maintain_consent_audit_trail {
+    triggers: ["consent_given", "consent_withdrawn", "consent_updated"],
+    context: [consent_record, timestamp, user_action],
+    
+    description: "Article 7(1) - Controller must be able to demonstrate 
+                  that consent was given"
+    
+    conditions: {
+        WHEN consent_event_occurred == true THEN {
+            consent_action: "log_consent_event",
+            article_reference: "7_1",
+            compliance_action: "create_audit_record",
+            record_retention_years: 7,
+            record_fields: [
+                "timestamp",
+                "user_id",
+                "consent_text_version",
+                "consent_method",
+                "ip_address",
+                "user_agent",
+                "consent_purposes",
+                "withdrawal_timestamp"
+            ]
+        }
+    }
+}

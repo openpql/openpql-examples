@@ -1,0 +1,278 @@
+# Basel III / AML - Customer Risk Assessment (CDD/KYC)
+# Customer Due Diligence and Know Your Customer requirements
+
+FRAMEWORK AML_Customer_Risk {
+    version: "2024.01.01"
+}
+
+# INTENT 1: Customer risk scoring
+INTENT assess_customer_risk {
+    triggers: ["new_customer_onboarding", "periodic_review"],
+    context: [customer_data, geographic_risk, business_profile],
+    
+    description: "AML-396 Customer risk assessment based on multiple factors"
+    
+    conditions: {
+        # High-risk jurisdiction
+        WHEN customer.country IN sanctions_list THEN
+            deny: "Customer from sanctioned jurisdiction" WITH {
+                regulation: "OFAC/EU Sanctions",
+                severity: "blocking",
+                escalation: "compliance_officer",
+                documentation_required: "sanctions_check_evidence"
+            }
+        
+        # High-risk country (not sanctioned but elevated risk)
+        WHEN customer.country IN high_risk_countries AND
+             enhanced_due_diligence_completed == false THEN {
+            risk_level: "high",
+            regulation_reference: "AML-396.4",
+            compliance_action: "require_enhanced_due_diligence",
+            edd_requirements: [
+                "source_of_funds_verification",
+                "beneficial_ownership_identification",
+                "purpose_of_relationship",
+                "ongoing_monitoring_enhanced"
+            ]
+        }
+        
+        # PEP (Politically Exposed Person) detection
+        WHEN customer.pep_status == true OR
+             beneficial_owner.pep_status == true THEN {
+            risk_level: "high",
+            regulation_reference: "AML-396.5",
+            compliance_action: "require_senior_management_approval",
+            pep_requirements: [
+                "source_of_wealth_verification",
+                "close_family_member_check",
+                "enhanced_ongoing_monitoring",
+                "transaction_pattern_analysis"
+            ]
+        }
+    }
+}
+
+# INTENT 2: Beneficial ownership verification
+INTENT verify_beneficial_ownership {
+    triggers: ["corporate_customer_onboarding", "ownership_change"],
+    context: [corporate_structure, ownership_chain, ultimate_beneficial_owners],
+    
+    description: "Identify and verify beneficial owners controlling 25%+ ownership"
+    
+    conditions: {
+        # Missing beneficial ownership information
+        WHEN customer_type == "corporate" AND
+             beneficial_owners_identified == false THEN
+            deny: "Beneficial ownership not identified" WITH {
+                regulation: "AML-396.3(b)",
+                severity: "blocking",
+                required_action: "identify_25_percent_owners",
+                documentation: "ownership_structure_chart"
+            }
+        
+        # Complex ownership structure
+        WHEN ownership_layers > 3 THEN {
+            risk_level: "elevated",
+            regulation_reference: "AML-396.3",
+            compliance_action: "enhanced_verification",
+            investigation_required: true,
+            approval_level: "compliance_officer"
+        }
+        
+        # Shell company indicators
+        WHEN business_address_type == "mail_forwarding" AND
+             employees_count == 0 AND
+             revenue_unclear == true THEN {
+            risk_level: "critical",
+            regulation_reference: "AML-396.6",
+            compliance_action: "detailed_investigation",
+            shell_company_indicators: [
+                "no_physical_presence",
+                "no_employees",
+                "no_clear_business_purpose",
+                "nominee_directors"
+            ],
+            recommendation: "decline_relationship"
+        }
+    }
+}
+
+# INTENT 3: Customer identification program (CIP)
+INTENT validate_customer_identification {
+    triggers: ["account_opening"],
+    context: [identity_documents, verification_results, watchlist_screening],
+    
+    description: "Verify customer identity through reliable documents and methods"
+    
+    conditions: {
+        # Missing identification
+        WHEN identity_documents_count < 2 THEN
+            deny: "Insufficient identification documents" WITH {
+                regulation: "31 CFR 1020.220",
+                severity: "blocking",
+                required_documents: [
+                    "government_issued_photo_id",
+                    "proof_of_address",
+                    "tax_identification_number"
+                ]
+            }
+        
+        # Document verification failed
+        WHEN document_verification_passed == false THEN
+            deny: "Identity document verification failed" WITH {
+                regulation: "31 CFR 1020.220(a)(2)",
+                severity: "blocking",
+                failure_reasons: document_verification_errors,
+                required_action: "provide_valid_documents"
+            }
+        
+        # Watchlist hit
+        WHEN watchlist_match_score > 0.85 THEN {
+            risk_level: "critical",
+            regulation_reference: "OFAC Compliance",
+            compliance_action: "block_immediately",
+            investigation_required: true,
+            watchlist_sources: [
+                "OFAC_SDN",
+                "EU_Sanctions",
+                "UN_Sanctions",
+                "PEP_Lists"
+            ],
+            escalation_deadline_hours: 4
+        }
+    }
+}
+
+# INTENT 4: Ongoing monitoring and periodic review
+INTENT perform_ongoing_monitoring {
+    triggers: ["periodic_review_due", "transaction_pattern_change"],
+    context: [customer_profile, transaction_history, risk_assessment],
+    
+    description: "Continuous monitoring and periodic customer reviews"
+    
+    conditions: {
+        # Periodic review overdue
+        WHEN last_review_date < current_date - 365 AND
+             customer_risk_level IN ["high", "medium"] THEN {
+            risk_level: customer_risk_level,
+            regulation_reference: "AML-396.7",
+            compliance_action: "trigger_periodic_review",
+            review_components: [
+                "update_customer_information",
+                "reassess_risk_level",
+                "review_transaction_patterns",
+                "verify_beneficial_ownership_changes"
+            ]
+        }
+        
+        # Transaction pattern deviation
+        WHEN transaction_volume_increase_percent > 200 OR
+             transaction_geography_changed == true THEN {
+            risk_level: "elevated",
+            regulation_reference: "AML-396.8",
+            compliance_action: "investigate_pattern_change",
+            investigation_scope: [
+                "source_of_increased_funds",
+                "business_justification",
+                "geographic_expansion_reason",
+                "updated_risk_assessment"
+            ]
+        }
+        
+        # Adverse media screening
+        WHEN adverse_media_hits > 0 THEN {
+            risk_level: "high",
+            regulation_reference: "AML-396.9",
+            compliance_action: "review_adverse_media",
+            media_categories_flagged: adverse_media_categories,
+            investigation_priority: "urgent",
+            decision_deadline_days: 5
+        }
+    }
+}
+
+# INTENT 5: Enhanced due diligence (EDD)
+INTENT perform_enhanced_due_diligence {
+    triggers: ["high_risk_customer_identified", "regulatory_requirement"],
+    context: [customer_risk_factors, business_relationship, transaction_profile],
+    
+    description: "Enhanced due diligence for high-risk customers"
+    
+    conditions: {
+        # High-risk triggers requiring EDD
+        WHEN customer_risk_level == "high" OR
+             customer.pep_status == true OR
+             customer.country IN high_risk_countries THEN {
+            risk_level: "high",
+            regulation_reference: "AML-396.4",
+            compliance_action: "conduct_enhanced_due_diligence",
+            edd_requirements: [
+                "source_of_wealth_documentation",
+                "source_of_funds_verification",
+                "business_relationship_purpose",
+                "expected_transaction_profile",
+                "enhanced_ongoing_monitoring",
+                "senior_management_approval"
+            ],
+            approval_level: "compliance_officer",
+            documentation_retention_years: 7
+        }
+        
+        # Private banking
+        WHEN account_type == "private_banking" AND
+             minimum_deposit > 1000000 THEN {
+            risk_level: "high",
+            regulation_reference: "31 CFR 1010.620",
+            compliance_action: "private_banking_edd",
+            additional_requirements: [
+                "beneficial_owner_verification",
+                "source_of_wealth_detailed",
+                "anticipated_account_activity",
+                "ongoing_monitoring_enhanced",
+                "senior_officer_approval"
+            ]
+        }
+    }
+}
+
+# INTENT 6: Suspicious activity detection
+INTENT detect_suspicious_activity {
+    triggers: ["transaction_monitoring_alert"],
+    context: [transaction_data, customer_profile, historical_patterns],
+    
+    description: "Identify suspicious activity requiring SAR filing"
+    
+    conditions: {
+        # Structuring detection
+        WHEN transactions_below_threshold_count > 5 AND
+             transactions_timeframe_days <= 7 AND
+             total_amount_close_to_threshold == true THEN {
+            suspicious_activity_type: "potential_structuring",
+            regulation_reference: "31 CFR 1020.320",
+            compliance_action: "investigate_structuring",
+            sar_filing_consideration: true,
+            investigation_deadline_days: 30
+        }
+        
+        # Unusual transaction patterns
+        WHEN transaction_amount > customer.average_transaction * 10 AND
+             business_justification_unclear == true THEN {
+            suspicious_activity_type: "unusual_transaction_size",
+            regulation_reference: "31 CFR 1020.320",
+            compliance_action: "request_justification",
+            sar_threshold_evaluation_required: true,
+            investigation_priority: "high"
+        }
+        
+        # Multiple red flags
+        WHEN red_flag_count >= 3 THEN {
+            suspicious_activity_type: "multiple_red_flags",
+            regulation_reference: "31 CFR 1020.320",
+            compliance_action: "escalate_to_aml_officer",
+            red_flags_identified: red_flag_list,
+            sar_filing_likely: true,
+            investigation_deadline_days: 15,
+            account_restriction_recommended: true
+        }
+    }
+}

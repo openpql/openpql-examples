@@ -1,0 +1,217 @@
+# HIPAA Privacy Rule - PHI Access Controls
+# Validates minimum necessary rule and access authorization
+
+FRAMEWORK HIPAA_Privacy {
+    version: "2013.01.25"
+}
+
+# INTENT 1: Minimum necessary rule
+INTENT enforce_minimum_necessary {
+    triggers: ["phi_access_request"],
+    context: [user_role, access_purpose, requested_fields],
+    
+    description: "45 CFR 164.502(b) - Limit PHI disclosure to minimum necessary 
+                  for intended purpose"
+    
+    conditions: {
+        # Over-broad access request
+        WHEN requested_fields_count > role_authorized_fields_count THEN
+            deny: "Access request exceeds minimum necessary" WITH {
+                regulation: "HIPAA 164.502(b)",
+                severity: "blocking",
+                allowed_fields: role_authorized_fields,
+                audit_action: "log_excessive_request"
+            }
+        
+        # Purpose validation
+        WHEN access_purpose NOT IN ["treatment", "payment", "healthcare_operations"] AND
+             patient_authorization_obtained == false THEN
+            deny: "Missing patient authorization for non-TPO purpose" WITH {
+                regulation: "HIPAA 164.508",
+                severity: "blocking",
+                required_action: "obtain_patient_authorization"
+            }
+        
+        # Role-based field restriction
+        WHEN user_role == "billing_staff" AND
+             "clinical_notes" IN requested_fields THEN
+            deny: "Billing staff not authorized for clinical notes" WITH {
+                regulation: "HIPAA 164.502(b)",
+                severity: "blocking",
+                authorized_fields: ["patient_name", "billing_codes", "insurance_info"]
+            }
+    }
+}
+
+# INTENT 2: Access authorization validation
+INTENT validate_phi_access_authorization {
+    triggers: ["phi_access_attempt"],
+    context: [user_identity, patient_record, access_history],
+    
+    description: "45 CFR 164.308(a)(4) - Verify authorized access to PHI"
+    
+    conditions: {
+        # No active authorization
+        WHEN user_authorization_active == false THEN
+            deny: "No active PHI access authorization" WITH {
+                regulation: "HIPAA 164.308(a)(4)",
+                severity: "blocking",
+                action_required: "complete_authorization_process"
+            }
+        
+        # Self-access (patient viewing own records)
+        WHEN user_id == patient_id THEN {
+            access_type: "patient_self_access",
+            regulation_reference: "164.524",
+            compliance_action: "allow_full_access",
+            audit_trail: "patient_accessed_own_record",
+            access_log_retention_years: 6
+        }
+        
+        # Treatment relationship required
+        WHEN access_purpose == "treatment" AND
+             treating_provider_relationship == false THEN
+            deny: "No treating provider relationship" WITH {
+                regulation: "HIPAA 164.506(c)",
+                severity: "blocking",
+                required_action: "establish_treatment_relationship"
+            }
+    }
+}
+
+# INTENT 3: Break-the-glass emergency access
+INTENT handle_emergency_access {
+    triggers: ["emergency_access_request"],
+    context: [emergency_type, patient_condition, requesting_provider],
+    
+    description: "Emergency PHI access with heightened audit requirements"
+    
+    conditions: {
+        # Emergency override
+        WHEN emergency_access_justified == true AND
+             patient_life_threatening_condition == true THEN {
+            access_type: "emergency_override",
+            regulation_reference: "164.510(a)",
+            compliance_action: "allow_temporary_access",
+            audit_level: "critical",
+            post_access_review_required: true,
+            review_deadline_hours: 24,
+            justification_documentation_required: true
+        }
+        
+        # Emergency access abuse detection
+        WHEN user_emergency_access_count_30_days > 5 THEN {
+            access_violation_type: "potential_emergency_abuse",
+            regulation_reference: "164.308(a)(4)",
+            risk_level: "high",
+            compliance_action: "escalate_to_privacy_officer",
+            investigation_required: true
+        }
+    }
+}
+
+# INTENT 4: Audit trail requirements
+INTENT maintain_phi_audit_trail {
+    triggers: ["phi_access", "phi_disclosure", "phi_modification"],
+    context: [user_action, accessed_data, timestamp],
+    
+    description: "45 CFR 164.308(a)(1)(ii)(D) - Maintain audit controls"
+    
+    conditions: {
+        WHEN phi_event_occurred == true THEN {
+            audit_action: "create_audit_log",
+            regulation_reference: "164.308(a)(1)(ii)(D)",
+            compliance_action: "log_comprehensive_details",
+            retention_years: 6,
+            log_fields: [
+                "timestamp",
+                "user_id",
+                "user_role",
+                "patient_id",
+                "action_type",
+                "accessed_fields",
+                "access_purpose",
+                "ip_address",
+                "workstation_id",
+                "emergency_override_used"
+            ]
+        }
+        
+        # High-risk access logging
+        WHEN access_type IN ["emergency_override", "bulk_export", "sensitive_diagnosis"] THEN {
+            audit_action: "create_flagged_audit_log",
+            regulation_reference: "164.312(b)",
+            compliance_action: "notify_privacy_officer",
+            review_priority: "high"
+        }
+    }
+}
+
+# INTENT 5: Patient right of access
+INTENT enforce_right_of_access {
+    triggers: ["patient_access_request"],
+    context: [patient_identity, requested_records, request_format],
+    
+    description: "45 CFR 164.524 - Patient right to access designated record set"
+    
+    conditions: {
+        # Timely access requirement
+        WHEN patient_access_request_received == true THEN {
+            access_type: "patient_right_of_access",
+            regulation_reference: "164.524(b)(2)",
+            compliance_action: "provide_access_within_30_days",
+            extension_allowed_days: 30,
+            denial_reasons_limited: [
+                "endangerment_to_self_or_others",
+                "reference_to_third_party",
+                "subject_of_ongoing_research"
+            ]
+        }
+        
+        # Electronic access requirement
+        WHEN patient_requested_format == "electronic" AND
+             records_maintained_electronically == true THEN {
+            access_type: "electronic_access",
+            regulation_reference: "164.524(c)(2)(ii)",
+            compliance_action: "provide_in_electronic_format",
+            acceptable_formats: ["PDF", "XML", "JSON", "HL7_FHIR"],
+            fee_limited_to_labor_costs: true
+        }
+    }
+}
+
+# INTENT 6: De-identification requirements
+INTENT validate_deidentification {
+    triggers: ["phi_deidentification_request"],
+    context: [data_fields, deidentification_method, intended_use],
+    
+    description: "45 CFR 164.514(b) - De-identification of PHI"
+    
+    conditions: {
+        # Safe harbor method validation
+        WHEN deidentification_method == "safe_harbor" THEN {
+            deidentification_type: "safe_harbor_18_identifiers",
+            regulation_reference: "164.514(b)(2)",
+            compliance_action: "validate_identifier_removal",
+            required_removals: [
+                "names", "geographic_subdivisions_smaller_than_state",
+                "dates_except_year", "phone_numbers", "fax_numbers",
+                "email_addresses", "ssn", "medical_record_numbers",
+                "health_plan_numbers", "account_numbers",
+                "certificate_numbers", "vehicle_identifiers",
+                "device_identifiers", "urls", "ip_addresses",
+                "biometric_identifiers", "full_face_photos",
+                "other_unique_identifiers"
+            ]
+        }
+        
+        # Statistical method validation
+        WHEN deidentification_method == "statistical" THEN {
+            deidentification_type: "expert_determination",
+            regulation_reference: "164.514(b)(1)",
+            compliance_action: "require_qualified_statistician",
+            documentation_required: true,
+            reidentification_risk_threshold: 0.05
+        }
+    }
+}

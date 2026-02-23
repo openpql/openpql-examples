@@ -1,0 +1,169 @@
+# EU AI Act - Article 6: Prohibited Practices
+# Detection and prevention of prohibited AI techniques
+
+FRAMEWORK EU_AI_Act_Article_6 {
+    version: "2024.06.01"
+}
+
+# INTENT 1: Detect subliminal manipulation techniques
+INTENT detect_subliminal_manipulation {
+    triggers: ["ai_system_execution", "content_delivery"],
+    context: [ai_output, user_interaction_patterns, psychological_indicators],
+    
+    description: "Article 6(1)(a) - Detect AI systems using subliminal techniques 
+                  to materially distort behavior in a manner that causes or is 
+                  likely to cause harm"
+    
+    conditions: {
+        # Manipulation score detection
+        WHEN manipulation_score > 0.7 THEN {
+            prohibited_practice_type: "subliminal_manipulation",
+            article_reference: "6_1_a",
+            risk_level: "critical",
+            compliance_action: "block_immediately",
+            evidence_required: true,
+            notification_authority: "EU_AI_Office"
+        }
+        
+        # Pattern-based detection
+        WHEN subliminal_pattern_detected == true THEN {
+            prohibited_practice_type: "subliminal_technique_identified",
+            article_reference: "6_1_a",
+            risk_level: "high",
+            compliance_action: "escalate_human_review",
+            review_deadline_hours: 4
+        }
+    }
+}
+
+# INTENT 2: Prevent exploitation of vulnerabilities
+INTENT prevent_vulnerability_exploitation {
+    triggers: ["ai_system_execution", "user_interaction"],
+    context: [user_profile, vulnerability_indicators, ai_behavior],
+    
+    description: "Article 6(1)(b) - Prevent exploitation of vulnerabilities due to 
+                  age, disability, or socio-economic situation"
+    
+    conditions: {
+        # Child protection
+        WHEN user.age < 18 AND psychological_pressure_detected == true THEN {
+            prohibited_practice_type: "child_exploitation",
+            article_reference: "6_1_b",
+            risk_level: "critical",
+            compliance_action: "block_and_report",
+            parent_notification_required: true
+        }
+        
+        # Disability exploitation
+        WHEN user.disability_status != null AND 
+             adaptive_manipulation_detected == true THEN {
+            prohibited_practice_type: "disability_exploitation",
+            article_reference: "6_1_b",
+            risk_level: "critical",
+            compliance_action: "block_and_investigate"
+        }
+        
+        # Socio-economic vulnerability
+        WHEN user.economic_vulnerability_score > 0.8 AND 
+             financial_pressure_tactics == true THEN {
+            prohibited_practice_type: "economic_exploitation",
+            article_reference: "6_1_b",
+            risk_level: "high",
+            compliance_action: "block_and_review"
+        }
+    }
+}
+
+# INTENT 3: Prevent social scoring for general purpose
+INTENT prevent_social_scoring {
+    triggers: ["scoring_calculation", "social_evaluation"],
+    context: [user_behavior, social_data, scoring_logic],
+    
+    description: "Article 6(1)(c) - Prevent social scoring by public authorities 
+                  or on their behalf for general purpose"
+    
+    conditions: {
+        # Public authority social scoring
+        WHEN scoring_authority_type == "public" AND 
+             scoring_purpose == "general" THEN {
+            prohibited_practice_type: "public_social_scoring",
+            article_reference: "6_1_c",
+            risk_level: "critical",
+            compliance_action: "block_immediately",
+            legal_review_required: true
+        }
+        
+        # Unjustified detrimental treatment
+        WHEN social_score_detrimental_outcome == true AND 
+             justification_documented == false THEN {
+            prohibited_practice_type: "unjustified_detrimental_treatment",
+            article_reference: "6_1_c",
+            risk_level: "critical",
+            compliance_action: "block_and_investigate"
+        }
+    }
+}
+
+# INTENT 4: Prevent real-time biometric identification
+INTENT prevent_realtime_biometric_rbi {
+    triggers: ["biometric_identification_request", "rbi_system_activation"],
+    context: [biometric_data, location_data, law_enforcement_authorization],
+    
+    description: "Article 6(1)(d) - Prevent real-time remote biometric identification 
+                  in publicly accessible spaces for law enforcement (with exceptions)"
+    
+    conditions: {
+        # General RBI prohibition
+        WHEN biometric_type == "real_time_remote" AND 
+             space_type == "publicly_accessible" AND 
+             purpose == "law_enforcement" AND
+             exception_authorized == false THEN {
+            prohibited_practice_type: "unauthorized_rbi",
+            article_reference: "6_1_d",
+            risk_level: "critical",
+            compliance_action: "block_immediately",
+            judicial_review_required: true
+        }
+        
+        # Exception validation (Article 5, paragraph 1, points h, i, j)
+        WHEN biometric_type == "real_time_remote" AND
+             exception_claimed == true THEN {
+            prohibited_practice_type: "rbi_exception_validation",
+            article_reference: "6_1_d",
+            risk_level: "high",
+            compliance_action: "require_judicial_authorization",
+            validation_steps_required: [
+                "verify_serious_crime",
+                "verify_proportionality",
+                "verify_necessity",
+                "verify_temporal_limits",
+                "verify_geographic_limits"
+            ]
+        }
+    }
+}
+
+# INTENT 5: Comprehensive prohibited practices monitoring
+INTENT monitor_all_prohibited_practices {
+    triggers: ["ai_system_startup", "periodic_audit"],
+    context: [system_configuration, historical_violations, regulatory_updates],
+    
+    description: "Continuous monitoring for all Article 6 prohibited practices"
+    
+    conditions: {
+        # System-wide compliance check
+        WHEN ai_system_active == true THEN {
+            prohibited_practice_type: "compliance_verification",
+            article_reference: "6",
+            risk_level: "medium",
+            compliance_action: "continuous_monitoring",
+            audit_frequency_hours: 24,
+            metrics_tracked: [
+                "manipulation_attempts",
+                "vulnerability_exploitation_blocks",
+                "social_scoring_requests",
+                "rbi_authorization_requests"
+            ]
+        }
+    }
+}
