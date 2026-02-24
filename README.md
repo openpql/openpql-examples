@@ -74,43 +74,80 @@ No SDK calls. No API wrappers. Pure business logic.
 The system adapts to changing conditions without code changes.
 
 ```pql
-WHEN provider_latency > 2000ms THEN
-    fallback: "faster_model"
+INTENT adaptive_routing {
+    triggers: ["ai_request"],
+    context: [provider_metrics, cost_tracking, audit_status],
 
-WHEN cost_per_request > 0.05 THEN
-    optimize: "cost_over_speed"
+    conditions: {
+        # Fallback when provider is slow
+        WHEN provider_latency > 2000ms THEN {
+            action: "fallback",
+            target_model: "faster_model",
+            reason: "latency_threshold_exceeded"
+        }
 
-WHEN compliance_audit_active == true THEN
-    logging: "comprehensive"
-    explainability: "mandatory"
+        # Cost optimization
+        WHEN cost_per_request > 0.05 THEN {
+            optimization_mode: "cost_over_speed",
+            budget_alert: true
+        }
+
+        # Audit mode activation
+        WHEN compliance_audit_active == true THEN {
+            logging: "comprehensive",
+            explainability: "mandatory",
+            retention: "extended"
+        }
+    }
+}
 ```
 
-Conditions trigger adaptations. The runtime synchronizes state.
+Conditions trigger adaptations. The runtime synchronizes state automatically.
 
 ### **4. Prompt Inheritance and Composition**
 
-Reuse governance patterns across regulations.
+Reuse governance patterns across use cases by composing INTENT logic.
 
 ```pql
-TEMPLATE RiskAssessment {
-    WHEN risk_score > {{threshold}} THEN
-        provider: "{{high_risk_provider}}"
-        explainability: "detailed"
+# Base pattern for high-risk assessments
+INTENT high_risk_assessment {
+    triggers: ["risk_evaluation"],
+    context: [risk_score, assessment_type],
+
+    conditions: {
+        WHEN risk_score > 0.7 THEN {
+            provider: "anthropic",
+            model: "claude-sonnet-4",
+            explainability: "detailed",
+            audit_level: "comprehensive"
+        }
+    }
 }
 
-# Inherit for different use cases
-INTENT credit_risk USES RiskAssessment {
-    threshold: 0.9,
-    high_risk_provider: "gpt-4-turbo"
-}
+# Compose for specific domains
+INTENT credit_risk_assessment {
+    triggers: ["credit_decision"],
+    context: [credit_score, loan_amount, applicant_history],
 
-INTENT fraud_risk USES RiskAssessment {
-    threshold: 0.7,
-    high_risk_provider: "claude-sonnet-4"
+    conditions: {
+        # High-stakes decisions use premium models
+        WHEN credit_score < 650 AND loan_amount > 100000 THEN {
+            provider: "openai",
+            model: "gpt-4-turbo",
+            explainability: "required",
+            compliance_framework: "fair_lending"
+        }
+
+        # Standard decisions use efficient models
+        DEFAULT {
+            provider: "anthropic",
+            model: "claude-haiku"
+        }
+    }
 }
 ```
 
-Write once. Compose everywhere.
+Patterns adapt across domains. No code duplication.
 
 ### **5. Context-Aware AI Routing**
 
@@ -210,11 +247,11 @@ Each version is production-ready. No rewrites.
 
 ## 🎯 Why This Matters
 
-**The industry lies about governance.**
+**Traditional governance tools make unrealistic promises.**
 
-Every GRC vendor promises "3-click compliance" and "configuration-based governance." But governance isn't easy. It's complex, precise work requiring mathematical correctness, cryptographic proof, and regulatory auditability.
+Many GRC vendors advertise "3-click compliance" and "configuration-based governance." But effective governance requires precision: mathematical correctness, cryptographic proof, and regulatory auditability.
 
-That's why we built OpenPQL—**for teams who understand that governance is compiled, not configured.**
+OpenPQL takes a different approach—**governance is compiled, not configured.** We treat compliance as code, bringing the rigor of software engineering to regulatory requirements.
 
 ### **The TypeScript Parallel**
 
