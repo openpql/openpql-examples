@@ -329,7 +329,7 @@ WORKFLOW aml_screening {  // @core
 aml_screening.pql → Governor Compiler → FastAPI app (port 9000)
                                       → ExecIR engine
                                       → Dockerfile
-                                      → governance_metadata record
+                                      → governance_records record
 ```
 
 **Execution Model:**
@@ -362,26 +362,7 @@ aml_screening.pql execution:
 ```
 
 **Database Impact:**
-```sql
--- Single PQL creates ONE governance_metadata record
-INSERT INTO governance_metadata (
-    governance_uuid,
-    pql_name,
-    parent_bundle_uuid,          -- NULL (standalone)
-    is_bundle_manifest,          -- FALSE
-    bundle_sequence,             -- NULL
-    bundle_endpoint_path         -- NULL
-) VALUES (...);
-
--- Evidence records link directly to governance_uuid
-INSERT INTO audit_evidence (
-    governance_uuid,             -- Single PQL UUID
-    business_transaction_id,     -- NULL (no workflow)
-    upstream_child_uuid,         -- NULL (no parent)
-    previous_hash,               -- H(n-1) within PQL only
-    chain_position               -- 1 to Ω_total
-) VALUES (...);
-```
+```\n-- Database implementation details abstracted\n-- Stores governance metadata, evidence chains, workflow state\n```
 
 **Use Cases:**
 - AML customer screening
@@ -400,9 +381,9 @@ INSERT INTO audit_evidence (
 ```
 mortgage_workflow.bundle.pql → Governor Compiler → 1 Unified FastAPI app (N endpoints)
                                                   → 1 Dockerfile
-                                                  → 1 bundle_manifests record
-                                                  → N bundle_children records
-                                                  → N governance_metadata records (linked)
+                                                  → 1 bundle_manifest record
+                                                  → N bundle_child_relationships records
+                                                  → N governance_records records (linked)
 ```
 
 **Execution Model:**
@@ -410,21 +391,21 @@ mortgage_workflow.bundle.pql → Governor Compiler → 1 Unified FastAPI app (N 
 1. POST /api/v1/intake         (Step 1 - C₁)
      → Execute intake.pql
      → Generate Ω₁ evidence
-     → Update workflow_instances (step 1 completed)
+     → Update workflow_state (step 1 completed)
      → Return intermediate result
 
 2. POST /api/v1/kyc            (Step 2 - C₂) 
-     → can_execute_step(btx, 2) → Check step 1 completed ✓
+     → verify_step_dependencies() → Check step 1 completed ✓
      → Execute kyc.pql
      → Generate Ω₂ evidence (hash-chained to C₁ tip)
-     → Update workflow_instances (step 2 completed)
+     → Update workflow_state (step 2 completed)
      → Return intermediate result
 
 3. POST /api/v1/decision       (Step 8 - C₈)
-     → can_execute_step(btx, 8) → Check steps 1-7 completed ✓
+     → verify_step_dependencies() → Check steps 1-7 completed ✓
      → Execute decision.pql
      → Generate Ω₈ evidence (hash-chained to C₇ tip)
-     → Update workflow_instances (status='completed', final_decision='approved')
+     → Update workflow_state (status='completed', final_decision='approved')
      → Return FINAL decision
 ```
 
@@ -477,61 +458,7 @@ Verification: O(N) = 8 children + 7 cross-links = 15 hash checks
 ```
 
 **Database Impact:**
-```sql
--- Parent BUNDLE creates 1 bundle_manifests record
-INSERT INTO bundle_manifests (
-    bundle_uuid,                 -- Parent UUID
-    bundle_name,                 -- "mortgage_workflow"
-    child_count,                 -- 8
-    expected_evidence_count,     -- 277 (Ω_bundle)
-    formula_version,             -- "1.0"
-    formula_metadata             -- JSONB with per-child Ω breakdown
-) VALUES (...);
-
--- Each child creates 1 bundle_children record
-INSERT INTO bundle_children (
-    bundle_uuid,                 -- Parent UUID (FK)
-    child_governance_uuid,       -- Child PQL UUID (FK)
-    sequence,                    -- 1 to N
-    endpoint_path,               -- "/api/v1/intake"
-    upstream_dependency,         -- Previous child UUID
-    expected_evidence_l1,        -- 2
-    expected_evidence_l2,        -- 6
-    expected_evidence_l3,        -- 12
-    requires_human_review        -- true/false (EU AI Act Article 14)
-) VALUES (...);
-
--- Each child creates 1 governance_metadata record (linked)
-INSERT INTO governance_metadata (
-    governance_uuid,             -- Child UUID
-    pql_name,                    -- "intake.pql"
-    parent_bundle_uuid,          -- Parent UUID (FK)
-    is_bundle_manifest,          -- FALSE
-    bundle_sequence,             -- 1 to N
-    bundle_endpoint_path         -- "/api/v1/intake"
-) VALUES (...);
-
--- Workflow instance tracks execution across time
-INSERT INTO workflow_instances (
-    business_transaction_id,     -- "MTG-2026-00142"
-    bundle_uuid,                 -- Parent UUID (FK)
-    total_steps,                 -- 8
-    completed_steps,             -- [1,2,3,4,5,6,7,8]
-    status,                      -- 'completed'
-    final_decision,              -- 'approved'
-    evidence_count,              -- 277
-    expected_evidence_count      -- 277 (Ω_bundle verified ✓)
-) VALUES (...);
-
--- Evidence records hash-chained across children
-INSERT INTO audit_evidence (
-    governance_uuid,             -- Child UUID (C₁, C₂, ..., C₈)
-    business_transaction_id,     -- "MTG-2026-00142" (same across all)
-    upstream_child_uuid,         -- Previous child UUID (cross-link)
-    previous_hash,               -- H(n-1) OR H_parent_tip OR Hᵢ₋₁,ₙᵢ₋₁
-    chain_position               -- 1 to Ω_bundle (global position)
-) VALUES (...);
-```
+```\n-- Database implementation details abstracted\n-- Stores governance metadata, evidence chains, workflow state\n```
 
 **Use Cases:**
 - Mortgage approval (8+ steps, 90 days)
@@ -670,13 +597,13 @@ BUNDLE mortgage_approval_workflow {
 4. Generate unified FastAPI app:
      → 8 endpoints (one per child)
      → Shared session management
-     → can_execute_step() middleware
-     → complete_workflow_step() calls after execution
+     → step dependency verification middleware
+     → workflow state updates calls after execution
      
 5. Database population:
-     → Insert bundle_manifests (parent metadata)
-     → Insert bundle_children × 8 (child mappings)
-     → Update governance_metadata.parent_bundle_uuid × 8
+     → Insert bundle_manifest (parent metadata)
+     → Insert bundle_child_relationships × 8 (child mappings)
+     → Update governance_records.parent_bundle_uuid × 8
      
 6. Docker packaging:
      → Single Dockerfile
@@ -690,31 +617,31 @@ business_transaction_id = "MTG-2026-00142"  // Generated at intake
 
 Step 1 (Day 1):
   POST /api/v1/mortgage/intake
-    → can_execute_step("MTG-2026-00142", 1)  // Returns true (no dependencies)
+    → verify_step_dependencies()  // Returns true (no dependencies)
     → Execute mortgage_intake.pql
     → Generate 20 evidence records (H₁,₁ to H₁,₂₀)
-    → complete_workflow_step("MTG-2026-00142", 1, "pass", 2, 6, 12)
-    → workflow_instances: completed_steps=[1], progress_pct=12.5%
+    → update_workflow_state()
+    → workflow_state: completed_steps=[1], progress_pct=12.5%
 
 Step 2 (Day 3):
   POST /api/v1/mortgage/kyc
-    → can_execute_step("MTG-2026-00142", 2)  // Returns true (step 1 done)
+    → verify_step_dependencies()  // Returns true (step 1 done)
     → Execute mortgage_kyc.pql
     → Generate 40 evidence records (H₂,₁ to H₂,₄₀)
     → First evidence: previous_hash = H₁,₂₀ (cross-child link)
-    → complete_workflow_step("MTG-2026-00142", 2, "pass", 2, 12, 26)
-    → workflow_instances: completed_steps=[1,2], progress_pct=25%
+    → update_workflow_state()
+    → workflow_state: completed_steps=[1,2], progress_pct=25%
 
 ... (Steps 3-7 repeat pattern)
 
 Step 8 (Day 90):
   POST /api/v1/mortgage/decision
-    → can_execute_step("MTG-2026-00142", 8)  // Returns true (steps 1-7 done)
+    → verify_step_dependencies()  // Returns true (steps 1-7 done)
     → Execute mortgage_underwriting.pql
     → Generate 60 evidence records (H₈,₁ to H₈,₆₀)
     → First evidence: previous_hash = H₇,₃₀ (cross-child link)
-    → complete_workflow_step("MTG-2026-00142", 8, "approved", 2, 18, 40)
-    → workflow_instances: completed_steps=[1,2,3,4,5,6,7,8], 
+    → update_workflow_state()
+    → workflow_state: completed_steps=[1,2,3,4,5,6,7,8], 
                          progress_pct=100%, 
                          status='completed',
                          final_decision='approved'
@@ -724,7 +651,7 @@ Step 8 (Day 90):
 ```
 // Attempt to jump to step 4 without completing 1-3
 POST /api/v1/mortgage/credit
-  → can_execute_step("MTG-2026-00142", 4)
+  → verify_step_dependencies()
   → Returns: {
         can_execute: false,
         reason: "Missing upstream steps: 1, 2, 3",
@@ -735,29 +662,7 @@ POST /api/v1/mortgage/credit
 ```
 
 **Auditor Queries:**
-```sql
--- Get all January 2026 mortgages by status
-SELECT * FROM workflow_summary_by_month 
-WHERE month = '2026-01-01' AND category = 'mortgage';
-
--- Get specific workflow details
-SELECT * FROM workflow_instances_with_evidence
-WHERE business_transaction_id = 'MTG-2026-00142';
-
--- Verify hash-chain integrity
-SELECT * FROM verify_bundle_chain('MTG-2026-00142')
-WHERE is_valid = false;
-
--- Get monthly compliance report
-SELECT 
-    COUNT(*) as total_applications,
-    SUM(CASE WHEN final_decision = 'approved' THEN 1 ELSE 0 END) as approved,
-    SUM(CASE WHEN final_decision = 'denied' THEN 1 ELSE 0 END) as denied,
-    AVG(EXTRACT(EPOCH FROM (completed_at - started_at)) / 86400) as avg_days
-FROM workflow_instances
-WHERE started_at >= '2026-01-01' AND started_at < '2026-02-01'
-  AND status = 'completed';
-```
+```\n-- Database implementation details abstracted\n-- Stores governance metadata, evidence chains, workflow state\n```
 
 ---
 
@@ -767,15 +672,15 @@ WHERE started_at >= '2026-01-01' AND started_at < '2026-02-01'
 |--------|-----------|------------|
 | **Input File** | `aml_screening.pql` | `mortgage_workflow.bundle.pql` + 8 children |
 | **Governor Calls** | 1 (single compile) | 1 + N (recursive) |
-| **Database Inserts** | 1 governance_metadata | 1 bundle_manifests + N bundle_children + N governance_metadata |
+| **Database Inserts** | 1 governance_records | 1 bundle_manifest + N bundle_child_relationships + N governance_records |
 | **FastAPI Apps** | 1 app, 1 endpoint | 1 app, N endpoints |
 | **Deployment** | Port 9000 (dedicated) | Port 10000 (unified) |
-| **State Management** | Stateless (no session) | Stateful (workflow_instances) |
+| **State Management** | Stateless (no session) | Stateful (workflow_state) |
 | **Evidence Formula** | Ω_total = 2 + Ω₂ + Ω₃ | Ω_bundle = 2(N+1) + Σ Ωᵢ₂ + Σ Ωᵢ₃ |
 | **Hash Chain** | Intra-PQL only | Cross-child + intra-child |
 | **Verification Complexity** | O(Ω_total) | O(N) cross-links + O(Ω_bundle) hashes |
 | **Workflow Lifecycle** | Single execution (<1 second) | 30-180 days |
-| **DEPENDS_ON Enforcement** | N/A | ✅ can_execute_step() |
+| **DEPENDS_ON Enforcement** | N/A | ✅ step dependency verification |
 | **Compliance Scope** | Single framework | Multi-jurisdiction |
 
 ---
@@ -783,24 +688,24 @@ WHERE started_at >= '2026-01-01' AND started_at < '2026-02-01'
 ### 6.6 Implementation Status
 
 **Database Schema:** ✅ Complete (v1.4 - February 2026)
-- bundle_manifests table
-- bundle_children table
-- workflow_instances table (sharded for O(1) lookup)
-- workflow_step_completions table (sharded)
+- bundle manifest tracking
+- child relationship management
+- workflow state persistence (sharded for scale)
+- workflow step completion tracking
 - Hash-chain columns across L1/L2/L3 evidence
-- Views: bundle_evidence_summary, workflow_summary_by_month, workflow_integrity_report
-- Functions: verify_bundle_chain(), can_execute_step(), complete_workflow_step()
+- integrity verification views
+- evidence verification functions
 
 **Governor Compiler:** 🚧 In Progress (Starting Q1 2026)
 - BUNDLE keyword lexer/parser (planned)
 - Recursive child compilation (planned)
-- bundle_manifests population (planned)
+- bundle_manifest population (planned)
 - Unified FastAPI app generation (planned)
 
 **ExecIR Runtime:** 🚧 In Progress
 - Hash-chain computation (H_bundle formula)
 - business_transaction_id propagation
-- complete_workflow_step() integration
+- workflow state updates integration
 - Cross-child hash linking
 
 **GovernEye PDF:** 🚧 Planned (Q2-Q3 2026)
@@ -3418,12 +3323,7 @@ Examination-Ready: ✅ YES
 
 **Step 1: Query by Business Transaction ID**
 
-```sql
--- GovernEye Evidence Database Query
-SELECT * FROM execir_evidence
-WHERE business_transaction_id = 'MTG-2026-00142'
-ORDER BY event_timestamp ASC;
-```
+```\n-- Database implementation details abstracted\n-- Stores governance metadata, evidence chains, workflow state\n```
 
 **Result:** 47 evidence events across 7 PQL executions, complete hash chain
 
@@ -5070,4 +4970,9 @@ governeye audit-report --business-id MTG-2026-00142 --format pdf
 ---
 
 **End of Chapter 14**
+
+
+
+
+
 
